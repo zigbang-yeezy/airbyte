@@ -45,8 +45,10 @@ public class BigQueryDenormalizedRecordConsumer extends BigQueryRecordConsumer {
                                             final ConfiguredAirbyteCatalog catalog,
                                             final Consumer<AirbyteMessage> outputRecordCollector,
                                             final StandardNameTransformer namingResolver,
-                                            final Set<String> fieldsWithRefDefinition) {
-    super(bigquery, writeConfigs, catalog, outputRecordCollector, false, false);
+                                            final Set<String> fieldsWithRefDefinition,
+                                            final boolean isGcsUploadingMode,
+                                            final boolean isKeepFilesInGcs) {
+    super(bigquery, writeConfigs, catalog, outputRecordCollector, isGcsUploadingMode, isKeepFilesInGcs);
     this.fieldsWithRefDefinition = fieldsWithRefDefinition;
     this.namingResolver = namingResolver;
     invalidKeys = new HashSet<>();

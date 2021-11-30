@@ -7,19 +7,8 @@ package io.airbyte.integrations.destination.bigquery;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.auth.oauth2.ServiceAccountCredentials;
-import com.google.cloud.bigquery.BigQuery;
-import com.google.cloud.bigquery.BigQueryOptions;
-import com.google.cloud.bigquery.Dataset;
-import com.google.cloud.bigquery.DatasetInfo;
 import com.google.cloud.bigquery.Field;
-import com.google.cloud.bigquery.FieldList;
-import com.google.cloud.bigquery.FieldValue;
-import com.google.cloud.bigquery.FieldValueList;
-import com.google.cloud.bigquery.Job;
-import com.google.cloud.bigquery.JobId;
-import com.google.cloud.bigquery.JobInfo;
-import com.google.cloud.bigquery.QueryJobConfiguration;
-import com.google.cloud.bigquery.TableResult;
+import com.google.cloud.bigquery.*;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import io.airbyte.commons.json.Jsons;
@@ -29,11 +18,13 @@ import io.airbyte.integrations.base.JavaBaseConstants;
 import io.airbyte.integrations.destination.StandardNameTransformer;
 import io.airbyte.integrations.standardtest.destination.DataArgumentsProvider;
 import io.airbyte.integrations.standardtest.destination.DestinationAcceptanceTest;
-import io.airbyte.protocol.models.AirbyteCatalog;
-import io.airbyte.protocol.models.AirbyteMessage;
-import io.airbyte.protocol.models.AirbyteRecordMessage;
-import io.airbyte.protocol.models.CatalogHelpers;
-import io.airbyte.protocol.models.ConfiguredAirbyteCatalog;
+import io.airbyte.protocol.models.*;
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ArgumentsSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,22 +34,16 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
-import org.apache.commons.lang3.tuple.ImmutablePair;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ArgumentsSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-public class BigQueryDenormalizedDestinationAcceptanceTest extends DestinationAcceptanceTest {
+public class BigQueryDenormalizedGscDestinationAcceptanceTest extends DestinationAcceptanceTest {
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(BigQueryDenormalizedDestinationAcceptanceTest.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(BigQueryDenormalizedGscDestinationAcceptanceTest.class);
 
   private static final Path CREDENTIALS_PATH = Path.of("secrets/credentials.json");
 
   private static final String CONFIG_DATASET_ID = "dataset_id";
   private static final String CONFIG_PROJECT_ID = "project_id";
   private static final String CONFIG_DATASET_LOCATION = "dataset_location";
-  private static final String CONFIG_CREDS = "credentials_json";
   private static final List<String> AIRBYTE_COLUMNS = List.of(JavaBaseConstants.COLUMN_NAME_AB_ID, JavaBaseConstants.COLUMN_NAME_EMITTED_AT);
 
   private BigQuery bigquery;
@@ -181,23 +166,42 @@ public class BigQueryDenormalizedDestinationAcceptanceTest extends DestinationAc
               + ". Override by setting setting path with the CREDENTIALS_PATH constant.");
     }
 
-    final String credentialsJsonString = new String(Files.readAllBytes(CREDENTIALS_PATH));
+    final String fullConfigFromSecretFileAsString = new String(Files.readAllBytes(CREDENTIALS_PATH));
 
-    final JsonNode credentialsJson = Jsons.deserialize(credentialsJsonString).get(BigQueryConsts.BIGQUERY_BASIC_CONFIG);
-    final String projectId = credentialsJson.get(CONFIG_PROJECT_ID).asText();
+    final JsonNode fullConfigFromSecretFileJson = Jsons.deserialize(fullConfigFromSecretFileAsString);
+    final JsonNode bigqueryConfigFromSecretFile = fullConfigFromSecretFileJson.get(BigQueryConsts.BIGQUERY_BASIC_CONFIG);
+    final JsonNode gcsConfigFromSecretFile = fullConfigFromSecretFileJson.get(BigQueryConsts.GCS_CONFIG);
+
+    final String projectId = bigqueryConfigFromSecretFile.get(CONFIG_PROJECT_ID).asText();
     final String datasetLocation = "US";
 
     final String datasetId = Strings.addRandomSuffix("airbyte_tests", "_", 8);
 
-    config = Jsons.jsonNode(ImmutableMap.builder()
-        .put(CONFIG_PROJECT_ID, projectId)
-        .put(CONFIG_CREDS, credentialsJson.toString())
-        .put(CONFIG_DATASET_ID, datasetId)
-        .put(CONFIG_DATASET_LOCATION, datasetLocation)
+    final JsonNode gcsCredentialFromSecretFile = gcsConfigFromSecretFile.get(BigQueryConsts.CREDENTIAL);
+    final JsonNode credential = Jsons.jsonNode(ImmutableMap.builder()
+        .put(BigQueryConsts.CREDENTIAL_TYPE, gcsCredentialFromSecretFile.get(BigQueryConsts.CREDENTIAL_TYPE))
+        .put(BigQueryConsts.HMAC_KEY_ACCESS_ID, gcsCredentialFromSecretFile.get(BigQueryConsts.HMAC_KEY_ACCESS_ID))
+        .put(BigQueryConsts.HMAC_KEY_ACCESS_SECRET, gcsCredentialFromSecretFile.get(BigQueryConsts.HMAC_KEY_ACCESS_SECRET))
         .build());
 
-    final ServiceAccountCredentials credentials =
-        ServiceAccountCredentials.fromStream(new ByteArrayInputStream(config.get(CONFIG_CREDS).asText().getBytes()));
+    final JsonNode loadingMethod = Jsons.jsonNode(ImmutableMap.builder()
+        .put(BigQueryConsts.METHOD, BigQueryConsts.GCS_STAGING)
+        .put(BigQueryConsts.GCS_BUCKET_NAME, gcsConfigFromSecretFile.get(BigQueryConsts.GCS_BUCKET_NAME))
+        .put(BigQueryConsts.GCS_BUCKET_PATH, gcsConfigFromSecretFile.get(BigQueryConsts.GCS_BUCKET_PATH).asText() + System.currentTimeMillis())
+        .put(BigQueryConsts.CREDENTIAL, credential)
+        .build());
+
+    config = Jsons.jsonNode(ImmutableMap.builder()
+        .put(BigQueryConsts.CONFIG_PROJECT_ID, projectId)
+        .put(BigQueryConsts.CONFIG_CREDS, bigqueryConfigFromSecretFile.toString())
+        .put(BigQueryConsts.CONFIG_DATASET_ID, datasetId)
+        .put(BigQueryConsts.CONFIG_DATASET_LOCATION, datasetLocation)
+        .put(BigQueryConsts.LOADING_METHOD, loadingMethod)
+        .build());
+
+    final ServiceAccountCredentials credentials = ServiceAccountCredentials
+        .fromStream(new ByteArrayInputStream(bigqueryConfigFromSecretFile.toString().getBytes()));
+
     bigquery = BigQueryOptions.newBuilder()
         .setProjectId(config.get(CONFIG_PROJECT_ID).asText())
         .setCredentials(credentials)
@@ -221,6 +225,7 @@ public class BigQueryDenormalizedDestinationAcceptanceTest extends DestinationAc
 
   @Override
   protected void tearDown(final TestDestinationEnv testEnv) {
+    // gcs tmp files are supposed to be removed automatically by consumer
     tearDownBigQuery();
   }
 

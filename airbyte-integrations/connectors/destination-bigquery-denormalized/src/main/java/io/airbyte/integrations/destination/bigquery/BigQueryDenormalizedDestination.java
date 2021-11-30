@@ -53,6 +53,7 @@ public class BigQueryDenormalizedDestination extends BigQueryDestination {
     return getNamingResolver().getIdentifier(streamName);
   }
 
+  @Override
   protected AirbyteMessageConsumer getRecordConsumer(final BigQuery bigquery,
                                                      final Map<AirbyteStreamNameNamespacePair, BigQueryWriteConfig> writeConfigs,
                                                      final ConfiguredAirbyteCatalog catalog,
@@ -60,7 +61,7 @@ public class BigQueryDenormalizedDestination extends BigQueryDestination {
                                                      final boolean isGcsUploadingMode,
                                                      final boolean isKeepFilesInGcs) {
     return new BigQueryDenormalizedRecordConsumer(bigquery, writeConfigs, catalog, outputRecordCollector, getNamingResolver(),
-        fieldsContainRefDefinitionValue);
+        fieldsContainRefDefinitionValue, isGcsUploadingMode, isKeepFilesInGcs);
   }
 
   @Override

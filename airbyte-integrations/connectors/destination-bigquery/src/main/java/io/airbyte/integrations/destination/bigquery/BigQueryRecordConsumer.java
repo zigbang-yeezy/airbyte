@@ -46,10 +46,7 @@ import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.nio.ByteBuffer;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -120,9 +117,7 @@ public class BigQueryRecordConsumer extends FailureTrackingAirbyteMessageConsume
           throw new RuntimeException(e);
         }
       } else {
-        // GCS uploading way, this data will be moved to bigquery in close method
-        final GcsCsvWriter gcsCsvWriter = writer.getGcsCsvWriter();
-        writeRecordToCsv(gcsCsvWriter, recordMessage);
+        writeRecordToCsv(writer, recordMessage);
       }
     } else {
       LOGGER.warn("Unexpected message: " + message.getType());
@@ -141,17 +136,21 @@ public class BigQueryRecordConsumer extends FailureTrackingAirbyteMessageConsume
         JavaBaseConstants.COLUMN_NAME_EMITTED_AT, formattedEmittedAt));
   }
 
-  protected void writeRecordToCsv(final GcsCsvWriter gcsCsvWriter, final AirbyteRecordMessage recordMessage) {
+  protected void writeRecordToCsv(final BigQueryWriteConfig writer, final AirbyteRecordMessage recordMessage) {
+    JsonNode formattedMessage = formatRecord(writer.getSchema(), recordMessage);
+    List<Object> recordValues = new ArrayList<>();
+
+    // Put values in schema order
+    writer.getSchema().getFields().forEach(field -> {
+      JsonNode valueNode = formattedMessage.get(field.getName());
+      recordValues.add((valueNode != null ? valueNode.asText() : null));
+    });
+
+    GcsCsvWriter gcsCsvWriter = writer.getGcsCsvWriter();
     // Bigquery represents TIMESTAMP to the microsecond precision, so we convert to microseconds then
     // use BQ helpers to string-format correctly.
-    final long emittedAtMicroseconds = TimeUnit.MICROSECONDS.convert(recordMessage.getEmittedAt(), TimeUnit.MILLISECONDS);
-    final String formattedEmittedAt = QueryParameterValue.timestamp(emittedAtMicroseconds).getValue();
-    final JsonNode formattedData = StandardNameTransformer.formatJsonPath(recordMessage.getData());
     try {
-      gcsCsvWriter.getCsvPrinter().printRecord(
-          UUID.randomUUID().toString(),
-          formattedEmittedAt,
-          Jsons.serialize(formattedData));
+      gcsCsvWriter.getCsvPrinter().printRecord(recordValues);
     } catch (IOException e) {
       e.printStackTrace();
       LOGGER.warn("An error occurred writing CSV file.");
@@ -165,9 +164,7 @@ public class BigQueryRecordConsumer extends FailureTrackingAirbyteMessageConsume
     if (isGcsUploadingMode) {
       closeGcsStreamsAndCopyDataToBigQuery(hasFailed);
     }
-
     closeNormalBigqueryStreams(hasFailed);
-
     if (isGcsUploadingMode && !isKeepFilesInGcs) {
       deleteDataFromGcsBucket();
     }
@@ -196,10 +193,10 @@ public class BigQueryRecordConsumer extends FailureTrackingAirbyteMessageConsume
 
     // copy data from tmp gcs storage to bigquery tables
     writeConfigs.values().stream()
-        .filter(pair -> pair.getGcsCsvWriter() != null)
-        .forEach(pair -> {
+        .filter(writeConfig -> writeConfig.getGcsCsvWriter() != null)
+        .forEach(writeConfig -> {
           try {
-            loadCsvFromGcsTruncate(pair);
+            loadCsvFromGcsTruncate(writeConfig);
           } catch (final Exception e) {
             LOGGER.error("Failed to load data from GCS CSV file to BigQuery tmp table with reason: " + e.getMessage());
             throw new RuntimeException(e);
