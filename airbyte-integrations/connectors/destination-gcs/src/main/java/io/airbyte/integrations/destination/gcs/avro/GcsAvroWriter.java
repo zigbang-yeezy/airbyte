@@ -44,13 +44,7 @@ public class GcsAvroWriter extends BaseGcsWriter implements S3Writer {
                        final Schema schema,
                        final JsonAvroConverter converter)
       throws IOException {
-    super(config, s3Client, configuredStream);
-
-    final String outputFilename = BaseGcsWriter.getOutputFilename(uploadTimestamp, S3Format.AVRO);
-    final String objectKey = String.join("/", outputPrefix, outputFilename);
-
-    LOGGER.info("Full GCS path for stream '{}': {}/{}", stream.getName(), config.getBucketName(),
-        objectKey);
+    super(config, s3Client, configuredStream, uploadTimestamp);
 
     this.avroRecordFactory = new AvroRecordFactory(schema, converter);
     this.uploadManager = S3StreamTransferManagerHelper.getDefault(
@@ -85,4 +79,8 @@ public class GcsAvroWriter extends BaseGcsWriter implements S3Writer {
     uploadManager.abort();
   }
 
+  @Override
+  public S3Format getFormat() {
+    return S3Format.AVRO;
+  }
 }

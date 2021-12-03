@@ -9,7 +9,7 @@ import com.google.cloud.bigquery.Schema;
 import com.google.cloud.bigquery.TableDataWriteChannel;
 import com.google.cloud.bigquery.TableId;
 import io.airbyte.integrations.destination.gcs.GcsDestinationConfig;
-import io.airbyte.integrations.destination.gcs.csv.GcsCsvWriter;
+import io.airbyte.integrations.destination.gcs.writer.BaseGcsWriter;
 
 class BigQueryWriteConfig {
 
@@ -18,7 +18,7 @@ class BigQueryWriteConfig {
   private final TableDataWriteChannel writer;
   private final WriteDisposition syncMode;
   private final Schema schema;
-  private final GcsCsvWriter gcsCsvWriter;
+  private final BaseGcsWriter gcsWriter;
   private final GcsDestinationConfig gcsDestinationConfig;
 
   BigQueryWriteConfig(final TableId table,
@@ -26,14 +26,14 @@ class BigQueryWriteConfig {
                       final TableDataWriteChannel writer,
                       final WriteDisposition syncMode,
                       final Schema schema,
-                      final GcsCsvWriter gcsCsvWriter,
+                      final BaseGcsWriter gcsWriter,
                       final GcsDestinationConfig gcsDestinationConfig) {
     this.table = table;
     this.tmpTable = tmpTable;
     this.writer = writer;
     this.syncMode = syncMode;
     this.schema = schema;
-    this.gcsCsvWriter = gcsCsvWriter;
+    this.gcsWriter = gcsWriter;
     this.gcsDestinationConfig = gcsDestinationConfig;
   }
 
@@ -57,8 +57,8 @@ class BigQueryWriteConfig {
     return schema;
   }
 
-  public GcsCsvWriter getGcsCsvWriter() {
-    return gcsCsvWriter;
+  public BaseGcsWriter getGcsWriter() {
+    return gcsWriter;
   }
 
   public GcsDestinationConfig getGcsDestinationConfig() {

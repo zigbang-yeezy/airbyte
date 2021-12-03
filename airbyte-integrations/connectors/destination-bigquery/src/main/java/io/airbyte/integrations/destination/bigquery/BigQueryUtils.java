@@ -33,6 +33,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+
+import io.airbyte.integrations.destination.gcs.writer.BaseGcsWriter;
+import io.airbyte.integrations.destination.s3.S3Format;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.joda.time.DateTime;
 import org.slf4j.Logger;
@@ -188,6 +191,10 @@ public class BigQueryUtils {
         data.put(e, googleBigQueryDateFormat);
       }
     });
+  }
+
+  public static String getGscUri(BaseGcsWriter gcsWriter) {
+    return String.format("gs://%s/%s", gcsWriter.getConfig().getBucketName(), gcsWriter.getObjectKey());
   }
 
 }

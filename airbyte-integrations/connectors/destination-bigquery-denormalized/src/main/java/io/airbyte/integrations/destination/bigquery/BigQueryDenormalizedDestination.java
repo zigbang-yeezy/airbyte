@@ -65,8 +65,8 @@ public class BigQueryDenormalizedDestination extends BigQueryDestination {
   }
 
   @Override
-  protected Schema getBigQuerySchema(final JsonNode jsonSchema) {
-    final List<Field> fieldList = getSchemaFields(getNamingResolver(), jsonSchema);
+  protected Schema getBigQuerySchema(final JsonNode jsonSchema, final boolean isGcsUploadingMode) {
+    final List<Field> fieldList = getSchemaFields(getNamingResolver(), jsonSchema, isGcsUploadingMode);
     if (fieldList.stream().noneMatch(f -> f.getName().equals(JavaBaseConstants.COLUMN_NAME_AB_ID))) {
       fieldList.add(Field.of(JavaBaseConstants.COLUMN_NAME_AB_ID, StandardSQLTypeName.STRING));
     }
@@ -76,12 +76,12 @@ public class BigQueryDenormalizedDestination extends BigQueryDestination {
     return com.google.cloud.bigquery.Schema.of(fieldList);
   }
 
-  private List<Field> getSchemaFields(final BigQuerySQLNameTransformer namingResolver, final JsonNode jsonSchema) {
+  private List<Field> getSchemaFields(final BigQuerySQLNameTransformer namingResolver, final JsonNode jsonSchema, final boolean isGcsUploadingMode) {
     Preconditions.checkArgument(jsonSchema.isObject() && jsonSchema.has(PROPERTIES_FIELD));
     final ObjectNode properties = (ObjectNode) jsonSchema.get(PROPERTIES_FIELD);
     List<Field> tmpFields = Jsons.keys(properties).stream()
         .peek(addToRefList(properties))
-        .map(key -> getField(namingResolver, key, properties.get(key))
+        .map(key -> getField(namingResolver, key, properties.get(key), isGcsUploadingMode)
             .build())
         .collect(Collectors.toList());
     if (!fieldsContainRefDefinitionValue.isEmpty()) {
@@ -108,7 +108,7 @@ public class BigQueryDenormalizedDestination extends BigQueryDestination {
     };
   }
 
-  private static Builder getField(final BigQuerySQLNameTransformer namingResolver, final String key, final JsonNode fieldDefinition) {
+  private static Builder getField(final BigQuerySQLNameTransformer namingResolver, final String key, final JsonNode fieldDefinition, final boolean isGcsUploadingMode) {
 
     final String fieldName = namingResolver.getIdentifier(key);
     final Builder builder = Field.newBuilder(fieldName, StandardSQLTypeName.STRING);
@@ -129,6 +129,10 @@ public class BigQueryDenormalizedDestination extends BigQueryDestination {
             builder.setType(primaryType.getBigQueryType());
           }
           case ARRAY -> {
+            if (isGcsUploadingMode) {
+              LOGGER.warn("The GCS flow can't process Arrays(Repeatable) due to BigQuery csv load limitations. Array field " + fieldName + " is replaced by text field!");
+              builder.setType(StandardSQLTypeName.STRING);
+            } else {
             final JsonNode items;
             if (fieldDefinition.has("items")) {
               items = fieldDefinition.get("items");
@@ -138,13 +142,18 @@ public class BigQueryDenormalizedDestination extends BigQueryDestination {
               // (https://github.com/airbytehq/airbyte/issues/5486)
               items = getTypeStringSchema();
             }
-            final Builder subField = getField(namingResolver, fieldName, items).setMode(Mode.REPEATED);
+            final Builder subField = getField(namingResolver, fieldName, items, isGcsUploadingMode).setMode(Mode.REPEATED);
             // "Array of Array of" (nested arrays) are not permitted by BigQuery ("Array of Record of Array of"
             // is)
             // Turn all "Array of" into "Array of Record of" instead
             return builder.setType(StandardSQLTypeName.STRUCT, subField.setName(NESTED_ARRAY_FIELD).build());
           }
+          }
           case OBJECT -> {
+            if (isGcsUploadingMode) {
+              LOGGER.warn("The GCS flow can't process Objects(Nested) due to BigQuery csv load limitations. Nested field " + fieldName + " is replaced by text field!");
+              builder.setType(StandardSQLTypeName.STRING);
+            } else {
             final JsonNode properties;
             if (fieldDefinition.has(PROPERTIES_FIELD)) {
               properties = fieldDefinition.get(PROPERTIES_FIELD);
@@ -152,14 +161,15 @@ public class BigQueryDenormalizedDestination extends BigQueryDestination {
               properties = fieldDefinition;
             }
             final FieldList fieldList = FieldList.of(Jsons.keys(properties)
-                .stream()
-                .map(f -> getField(namingResolver, f, properties.get(f)).build())
-                .collect(Collectors.toList()));
+                    .stream()
+                    .map(f -> getField(namingResolver, f, properties.get(f), isGcsUploadingMode).build())
+                    .collect(Collectors.toList()));
             if (fieldList.size() > 0) {
               builder.setType(StandardSQLTypeName.STRUCT, fieldList);
             } else {
               builder.setType(StandardSQLTypeName.STRING);
             }
+          }
           }
           default -> {
             throw new IllegalStateException(

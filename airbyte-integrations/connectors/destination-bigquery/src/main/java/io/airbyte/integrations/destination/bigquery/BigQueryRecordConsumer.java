@@ -10,21 +10,9 @@ import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.DeleteObjectsRequest.KeyVersion;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.google.cloud.bigquery.BigQuery;
-import com.google.cloud.bigquery.BigQueryException;
-import com.google.cloud.bigquery.CopyJobConfiguration;
-import com.google.cloud.bigquery.CsvOptions;
-import com.google.cloud.bigquery.Field;
-import com.google.cloud.bigquery.Job;
-import com.google.cloud.bigquery.JobInfo;
+import com.google.cloud.bigquery.*;
 import com.google.cloud.bigquery.JobInfo.CreateDisposition;
 import com.google.cloud.bigquery.JobInfo.WriteDisposition;
-import com.google.cloud.bigquery.LoadJobConfiguration;
-import com.google.cloud.bigquery.QueryJobConfiguration;
-import com.google.cloud.bigquery.QueryParameterValue;
-import com.google.cloud.bigquery.Schema;
-import com.google.cloud.bigquery.TableDataWriteChannel;
-import com.google.cloud.bigquery.TableId;
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableMap;
 import io.airbyte.commons.json.Jsons;
@@ -38,6 +26,7 @@ import io.airbyte.integrations.destination.StandardNameTransformer;
 import io.airbyte.integrations.destination.gcs.GcsDestinationConfig;
 import io.airbyte.integrations.destination.gcs.GcsS3Helper;
 import io.airbyte.integrations.destination.gcs.csv.GcsCsvWriter;
+import io.airbyte.integrations.destination.s3.S3Format;
 import io.airbyte.protocol.models.AirbyteMessage;
 import io.airbyte.protocol.models.AirbyteMessage.Type;
 import io.airbyte.protocol.models.AirbyteRecordMessage;
@@ -103,7 +92,7 @@ public class BigQueryRecordConsumer extends FailureTrackingAirbyteMessageConsume
       final BigQueryWriteConfig writer = writeConfigs.get(pair);
 
       // select the way of uploading - normal or through the GCS
-      if (writer.getGcsCsvWriter() == null) {
+      if (writer.getGcsWriter() == null) {
         // Normal uploading way
         try {
           writer.getWriter()
@@ -146,7 +135,7 @@ public class BigQueryRecordConsumer extends FailureTrackingAirbyteMessageConsume
       recordValues.add((valueNode != null ? valueNode.asText() : null));
     });
 
-    GcsCsvWriter gcsCsvWriter = writer.getGcsCsvWriter();
+    GcsCsvWriter gcsCsvWriter = writer.getGcsWriter();
     // Bigquery represents TIMESTAMP to the microsecond precision, so we convert to microseconds then
     // use BQ helpers to string-format correctly.
     try {
@@ -172,13 +161,13 @@ public class BigQueryRecordConsumer extends FailureTrackingAirbyteMessageConsume
 
   private void closeGcsStreamsAndCopyDataToBigQuery(final boolean hasFailed) {
     final List<BigQueryWriteConfig> gcsWritersList = writeConfigs.values().parallelStream()
-        .filter(el -> el.getGcsCsvWriter() != null)
+        .filter(el -> el.getGcsWriter() != null)
         .collect(Collectors.toList());
 
     if (!gcsWritersList.isEmpty()) {
       LOGGER.info("GCS connectors that need to be closed:" + gcsWritersList);
       gcsWritersList.parallelStream().forEach(writer -> {
-        final GcsCsvWriter gcsCsvWriter = writer.getGcsCsvWriter();
+        final GcsCsvWriter gcsCsvWriter = writer.getGcsWriter();
 
         try {
           LOGGER.info("Closing connector:" + gcsCsvWriter);
@@ -193,7 +182,7 @@ public class BigQueryRecordConsumer extends FailureTrackingAirbyteMessageConsume
 
     // copy data from tmp gcs storage to bigquery tables
     writeConfigs.values().stream()
-        .filter(writeConfig -> writeConfig.getGcsCsvWriter() != null)
+        .filter(writeConfig -> writeConfig.getGcsWriter() != null)
         .forEach(writeConfig -> {
           try {
             loadCsvFromGcsTruncate(writeConfig);
@@ -204,35 +193,51 @@ public class BigQueryRecordConsumer extends FailureTrackingAirbyteMessageConsume
         });
   }
 
+  private LoadJobConfiguration getFileLoadJobConfiguration(BigQueryWriteConfig writeConfig) {
+    S3Format format = writeConfig.getGcsWriter().getFormat();
+    final TableId tmpTable = writeConfig.getTmpTable();
+    final Schema schema = writeConfig.getSchema();
+
+    final String file = BigQueryUtils.getGscUri(writeConfig.getGcsWriter());
+
+    // Initialize client that will be used to send requests. This client only needs to be created
+    // once, and can be reused for multiple requests.
+    LOGGER.info(String.format("Started copying data from %s GCS csv file to %s tmp BigQuery table with schema: \n %s",
+            file, tmpTable, schema));
+    if (format == S3Format.CSV){
+      final CsvOptions csvOptions = CsvOptions.newBuilder().setEncoding(UTF8).setSkipLeadingRows(1).build();
+
+      return
+              LoadJobConfiguration.builder(tmpTable, file)
+                      .setFormatOptions(csvOptions)
+                      .setSchema(schema)
+                      .setWriteDisposition(writeConfig.getSyncMode())
+                      .build();
+    } else if (format == S3Format.JSONL) {
+      return
+              LoadJobConfiguration.newBuilder(tmpTable, file)
+                      .setFormatOptions(FormatOptions.json())
+                      .setSchema(schema)
+                      .setWriteDisposition(writeConfig.getSyncMode())
+                      .build();
+
+    } else {
+      throw new RuntimeException("The format "+format+" is not supported by GSC BigQuery destination yet!");
+    }
+  }
+
   private void loadCsvFromGcsTruncate(final BigQueryWriteConfig bigQueryWriteConfig)
       throws Exception {
     try {
-
-      final TableId tmpTable = bigQueryWriteConfig.getTmpTable();
-      final Schema schema = bigQueryWriteConfig.getSchema();
-
-      final String csvFile = bigQueryWriteConfig.getGcsCsvWriter().getGcsCsvFileLocation();
-
-      // Initialize client that will be used to send requests. This client only needs to be created
-      // once, and can be reused for multiple requests.
-      LOGGER.info(String.format("Started copying data from %s GCS csv file to %s tmp BigQuery table with schema: \n %s",
-          csvFile, tmpTable, schema));
-
-      final CsvOptions csvOptions = CsvOptions.newBuilder().setEncoding(UTF8).setSkipLeadingRows(1).build();
-
-      final LoadJobConfiguration configuration =
-          LoadJobConfiguration.builder(tmpTable, csvFile)
-              .setFormatOptions(csvOptions)
-              .setSchema(schema)
-              .setWriteDisposition(bigQueryWriteConfig.getSyncMode())
-              .build();
+      LoadJobConfiguration configuration = getFileLoadJobConfiguration(bigQueryWriteConfig);
+      String fileExtension = bigQueryWriteConfig.getGcsWriter().getFormat().getFileExtension();
 
       // For more information on Job see:
       // https://googleapis.dev/java/google-cloud-clients/latest/index.html?com/google/cloud/bigquery/package-summary.html
       // Load the table
       final Job loadJob = bigquery.create(JobInfo.of(configuration));
 
-      LOGGER.info("Created a new job GCS csv file to tmp BigQuery table: " + loadJob);
+      LOGGER.info("Created a new job GCS " + fileExtension + " file to tmp BigQuery table: " + loadJob);
       LOGGER.info("Waiting for job to complete...");
 
       // Load data from a GCS parquet file into the table
@@ -251,7 +256,7 @@ public class BigQueryRecordConsumer extends FailureTrackingAirbyteMessageConsume
         LOGGER.error(msg);
         throw new Exception(msg);
       }
-      LOGGER.info("Table is successfully overwritten by CSV file loaded from GCS");
+      LOGGER.info("Table is successfully overwritten by " + fileExtension + " file loaded from GCS");
     } catch (final BigQueryException | InterruptedException e) {
       LOGGER.error("Column not added during load append \n" + e.toString());
       throw new RuntimeException("Column not added during load append \n" + e.toString());

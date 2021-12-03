@@ -41,6 +41,7 @@ public class GcsParquetWriter extends BaseGcsWriter implements S3Writer {
 
   private final ParquetWriter<Record> parquetWriter;
   private final AvroRecordFactory avroRecordFactory;
+  private final Path path;
 
   public GcsParquetWriter(final GcsDestinationConfig config,
                           final AmazonS3 s3Client,
@@ -49,16 +50,10 @@ public class GcsParquetWriter extends BaseGcsWriter implements S3Writer {
                           final Schema schema,
                           final JsonAvroConverter converter)
       throws URISyntaxException, IOException {
-    super(config, s3Client, configuredStream);
-
-    final String outputFilename = BaseGcsWriter.getOutputFilename(uploadTimestamp, S3Format.PARQUET);
-    final String objectKey = String.join("/", outputPrefix, outputFilename);
-    LOGGER.info("Storage path for stream '{}': {}/{}", stream.getName(), config.getBucketName(), objectKey);
+    super(config, s3Client, configuredStream, uploadTimestamp);
 
     final URI uri = new URI(String.format("s3a://%s/%s/%s", config.getBucketName(), outputPrefix, outputFilename));
-    final Path path = new Path(uri);
-
-    LOGGER.info("Full GCS path for stream '{}': {}", stream.getName(), path);
+    path = new Path(uri);
 
     final S3ParquetFormatConfig formatConfig = (S3ParquetFormatConfig) config.getFormatConfig();
     final Configuration hadoopConfig = getHadoopConfig(config);
@@ -72,6 +67,11 @@ public class GcsParquetWriter extends BaseGcsWriter implements S3Writer {
         .withDictionaryEncoding(formatConfig.isDictionaryEncoding())
         .build();
     this.avroRecordFactory = new AvroRecordFactory(schema, converter);
+  }
+
+  @Override
+  protected void logFilePath() {
+    LOGGER.info("Full GCS path for stream '{}': {}", stream.getName(), path);
   }
 
   public static Configuration getHadoopConfig(final GcsDestinationConfig config) {
@@ -107,6 +107,11 @@ public class GcsParquetWriter extends BaseGcsWriter implements S3Writer {
       parquetWriter.close();
       LOGGER.info("Upload completed for stream '{}'.", stream.getName());
     }
+  }
+
+  @Override
+  public S3Format getFormat() {
+    return S3Format.PARQUET;
   }
 
 }

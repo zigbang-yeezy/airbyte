@@ -42,15 +42,27 @@ public abstract class BaseGcsWriter implements S3Writer {
   protected final AirbyteStream stream;
   protected final DestinationSyncMode syncMode;
   protected final String outputPrefix;
+  protected String outputFilename;
+  protected String objectKey;
 
   protected BaseGcsWriter(final GcsDestinationConfig config,
                           final AmazonS3 s3Client,
-                          final ConfiguredAirbyteStream configuredStream) {
+                          final ConfiguredAirbyteStream configuredStream,
+                          final Timestamp uploadTimestamp) {
     this.config = config;
     this.s3Client = s3Client;
     this.stream = configuredStream.getStream();
     this.syncMode = configuredStream.getDestinationSyncMode();
     this.outputPrefix = S3OutputPathHelper.getOutputPrefix(config.getBucketPath(), stream);
+    this.outputFilename = BaseGcsWriter.getOutputFilename(uploadTimestamp, getFormat());
+    this.objectKey = String.join("/", outputPrefix, outputFilename);
+
+    logFilePath();
+  }
+
+  protected void logFilePath() {
+    LOGGER.info("Full GCS path for stream '{}': {}/{}", stream.getName(), config.getBucketName(),
+            objectKey);
   }
 
   /**
@@ -141,4 +153,17 @@ public abstract class BaseGcsWriter implements S3Writer {
         format.getFileExtension());
   }
 
+  public abstract S3Format getFormat();
+
+  public String getOutputFilename() {
+    return outputFilename;
+  }
+
+  public String getObjectKey() {
+    return objectKey;
+  }
+
+  public GcsDestinationConfig getConfig() {
+    return config;
+  }
 }

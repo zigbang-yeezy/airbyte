@@ -62,6 +62,8 @@ public class BigQueryDenormalizedRecordConsumer extends BigQueryRecordConsumer {
     final String formattedEmittedAt = QueryParameterValue.timestamp(emittedAtMicroseconds).getValue();
     Preconditions.checkArgument(recordMessage.getData().isObject());
     final ObjectNode data = (ObjectNode) formatData(schema.getFields(), recordMessage.getData());
+    LOGGER.warn("formatData result : " + data);
+
     // replace ObjectNode with TextNode for fields with $ref definition key
     // Do not need to iterate through all JSON Object nodes, only first nesting object.
     if (!fieldsWithRefDefinition.isEmpty()) {
@@ -84,6 +86,10 @@ public class BigQueryDenormalizedRecordConsumer extends BigQueryRecordConsumer {
   }
 
   protected JsonNode formatData(final FieldList fields, final JsonNode root) {
+    LOGGER.warn("formatData fields : " + fields);
+    LOGGER.warn("formatData root : " + root);
+    LOGGER.warn("formatData isObj : " + root.isObject());
+    LOGGER.warn("formatData isArr : " + root.isArray());
     // handles empty objects and arrays
     if (fields == null) {
       return root;

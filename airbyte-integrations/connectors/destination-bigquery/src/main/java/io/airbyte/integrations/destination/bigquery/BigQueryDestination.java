@@ -193,9 +193,9 @@ public class BigQueryDestination extends BaseConnector implements Destination {
       final String tableName = getTargetTableName(streamName);
       final String tmpTableName = namingResolver.getTmpTableName(streamName);
       final String datasetLocation = BigQueryUtils.getDatasetLocation(config);
+      final Schema schema = getBigQuerySchema(stream.getJsonSchema(), isGcsUploadingMode);
       BigQueryUtils.createSchemaAndTableIfNeeded(bigquery, existingSchemas, schemaName, tmpTableName,
-          datasetLocation, getBigQuerySchema(stream.getJsonSchema()));
-      final Schema schema = getBigQuerySchema(stream.getJsonSchema());
+          datasetLocation, schema);
       // https://cloud.google.com/bigquery/docs/loading-data-local#loading_data_from_a_local_data_source
       final WriteChannelConfiguration writeChannelConfiguration = WriteChannelConfiguration
           .newBuilder(TableId.of(schemaName, tmpTableName))
@@ -272,7 +272,7 @@ public class BigQueryDestination extends BaseConnector implements Destination {
     return new BigQueryRecordConsumer(bigquery, writeConfigs, catalog, outputRecordCollector, isGcsUploadingMode, isKeepFilesInGcs);
   }
 
-  protected Schema getBigQuerySchema(final JsonNode jsonSchema) {
+  protected Schema getBigQuerySchema(final JsonNode jsonSchema, final boolean isGcsUploadingMode) {
     return SCHEMA;
   }
 

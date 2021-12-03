@@ -40,12 +40,7 @@ public class GcsJsonlWriter extends BaseGcsWriter implements S3Writer {
                         final AmazonS3 s3Client,
                         final ConfiguredAirbyteStream configuredStream,
                         final Timestamp uploadTimestamp) {
-    super(config, s3Client, configuredStream);
-
-    final String outputFilename = BaseGcsWriter.getOutputFilename(uploadTimestamp, S3Format.JSONL);
-    final String objectKey = String.join("/", outputPrefix, outputFilename);
-
-    LOGGER.info("Full GCS path for stream '{}': {}/{}", stream.getName(), config.getBucketName(), objectKey);
+    super(config, s3Client, configuredStream, uploadTimestamp);
 
     this.uploadManager = S3StreamTransferManagerHelper.getDefault(
         config.getBucketName(), objectKey, s3Client, config.getFormatConfig().getPartSize());
@@ -76,6 +71,11 @@ public class GcsJsonlWriter extends BaseGcsWriter implements S3Writer {
     printWriter.close();
     outputStream.close();
     uploadManager.abort();
+  }
+
+  @Override
+  public S3Format getFormat() {
+    return S3Format.JSONL;
   }
 
 }
