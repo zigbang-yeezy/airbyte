@@ -12,6 +12,8 @@ import com.google.common.collect.ImmutableMap;
 import io.airbyte.commons.json.Jsons;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -22,10 +24,35 @@ public class JsonSecretsProcessorTest {
 
   private static final JsonNode SCHEMA_ONE_LAYER = Jsons.deserialize(
       "{\n"
+          + "  \"type\": \"object\","
           + "  \"properties\": {\n"
           + "    \"secret1\": {\n"
           + "      \"type\": \"string\",\n"
           + "      \"airbyte_secret\": true\n"
+          + "    },\n"
+          + "    \"secret2\": {\n"
+          + "      \"type\": \"string\",\n"
+          + "      \"airbyte_secret\": \"true\"\n"
+          + "    },\n"
+          + "    \"field1\": {\n"
+          + "      \"type\": \"string\"\n"
+          + "    },\n"
+          + "    \"field2\": {\n"
+          + "      \"type\": \"number\"\n"
+          + "    }\n"
+          + "  }\n"
+          + "}\n");
+
+  private static final JsonNode SCHEMA_WITH_ARRAY = Jsons.deserialize(
+      "{\n"
+          + "  \"type\": \"object\","
+          + "  \"properties\": {\n"
+          + "    \"secret1\": {\n"
+          + "      \"type\": \"array\","
+          + "      \"items\": {\n"
+          + "        \"type\": \"string\",\n"
+          + "        \"airbyte_secret\": true\n"
+          + "      }\n"
           + "    },\n"
           + "    \"secret2\": {\n"
           + "      \"type\": \"string\",\n"
@@ -161,6 +188,22 @@ public class JsonSecretsProcessorTest {
           + "  }");
 
   JsonSecretsProcessor processor = new JsonSecretsProcessor();
+
+  @Test
+  void testGetAllSecretPaths() {
+    System.out.println("---");
+    System.out.println(processor.getAllSecretKeys(SCHEMA_ONE_LAYER));
+    System.out.println(processor.getAllSecretKeys2(SCHEMA_ONE_LAYER));
+    System.out.println("---");
+    System.out.println(processor.getAllSecretKeys(SCHEMA_INNER_OBJECT));
+    System.out.println(processor.getAllSecretKeys2(SCHEMA_INNER_OBJECT));
+    System.out.println("---");
+    System.out.println(processor.getAllSecretKeys(ONE_OF_WITH_SAME_KEY_IN_SUB_SCHEMAS));
+    System.out.println(processor.getAllSecretKeys2(ONE_OF_WITH_SAME_KEY_IN_SUB_SCHEMAS));
+    System.out.println("---");
+    System.out.println(processor.getAllSecretKeys(SCHEMA_WITH_ARRAY));
+    System.out.println(processor.getAllSecretKeys2(SCHEMA_WITH_ARRAY));
+  }
 
   @Test
   public void testCopySecrets() {
@@ -320,8 +363,11 @@ public class JsonSecretsProcessorTest {
     final JsonNode expected = objectMapper.readTree(expectedIs);
 
     final JsonNode actual = processor.maskSecrets(input, specs);
-
     assertEquals(expected, actual);
+
+    final Set<List<String>> secretKeys = processor.getAllSecretKeys2(specs);
+    final JsonNode masked2 = processor.maskAllSecrets2(input, secretKeys);
+    assertEquals(actual, masked2);
   }
 
 }

@@ -193,6 +193,47 @@ public class Jsons {
     return optional.map(JsonNode::asInt).orElse(0);
   }
 
+  // // https://www.baeldung.com/jackson-json-node-tree-model
+  // public static void processNode(final JsonNode jsonNode, final Consumer<JsonNode> consumer) {
+  // consumer.accept(jsonNode);
+  //
+  // if (jsonNode.isValueNode()) {
+  // return;
+  // } else if (jsonNode.isArray() || jsonNode.isObject()) {
+  // for (final JsonNode arrayItem : jsonNode) {
+  // processNode(arrayItem, consumer);
+  // }
+  // }
+  // }
+
+  // // root
+  // public static void processNodeWithPath(final JsonNode jsonNode, final BiConsumer<JsonNode,
+  // List<String>> consumer) {
+  // processNodeWithPath(jsonNode, new ArrayList<>(), consumer);
+  // }
+  //
+  // public static void processNodeWithPath(final JsonNode jsonNode, final List<String> path, final
+  // BiConsumer<JsonNode, List<String>> consumer) {
+  // consumer.accept(jsonNode, path);
+  //
+  // if (jsonNode.isValueNode()) {
+  // return;
+  // } else if (jsonNode.isArray()) {
+  // final List<String> newPath = new ArrayList(path);
+  // newPath.add("[]");
+  // for (final JsonNode arrayItem : jsonNode) {
+  // processNodeWithPath(arrayItem, newPath, consumer);
+  // }
+  // } else if (jsonNode.isObject()) {
+  // for (final Iterator<Entry<String, JsonNode>> it = jsonNode.fields(); it.hasNext();) {
+  // final Entry<String, JsonNode> child = it.next();
+  // final List<String> newPath = new ArrayList<>(path);
+  // newPath.add(child.getKey());
+  // processNodeWithPath(child.getValue(), newPath, consumer);
+  // }
+  // }
+  // }
+
   /**
    * By the Jackson DefaultPrettyPrinter prints objects with an extra space as follows: {"name" :
    * "airbyte"}. We prefer {"name": "airbyte"}.

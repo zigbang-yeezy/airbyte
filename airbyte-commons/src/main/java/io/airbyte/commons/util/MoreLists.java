@@ -7,18 +7,22 @@ package io.airbyte.commons.util;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 
 public class MoreLists {
 
   /**
-   * @return returns empty optional if the list is empty or if the last element in the list is null.
+   * @return returns last element in array.
    */
-  public static <T> Optional<T> last(final List<T> list) {
-    if (list.isEmpty()) {
-      return Optional.empty();
-    }
-    return Optional.ofNullable(list.get(list.size() - 1));
+  public static <T> T last(final List<T> list) {
+    return list.get(list.size() - 1);
+  }
+
+  public static <T> List<T> sublistRemoveNFromEnd(final List<T> list, final int numItemsToRemove) {
+    return list.subList(0, list.size() - numItemsToRemove);
+  }
+
+  public static <T> List<T> sublistToEnd(final List<T> list, final int startInclusive) {
+    return list.subList(startInclusive, list.size());
   }
 
   /**

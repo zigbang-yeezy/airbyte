@@ -10,11 +10,17 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
+import io.airbyte.commons.json.JsonSchemas;
 import io.airbyte.commons.json.Jsons;
+import io.airbyte.commons.util.MoreLists;
 import io.airbyte.validation.json.JsonSchemaValidator;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
@@ -90,6 +96,63 @@ public class JsonSecretsProcessor {
     return copiedObj;
   }
 
+  // private Consumer<JsonNode> visitorFactory(final SecretKeys secretKeys) {
+  // return (node) -> {
+  // if(node.isObject()) {
+  // node.iterator()
+  //
+  // }
+  // }
+  // }
+  //
+  public JsonNode maskAllSecrets2(final JsonNode obj, final Set<List<String>> secretKeys) {
+    final JsonNode copy = Jsons.clone(obj);
+    for (final List<String> secretKey : secretKeys) {
+      traverse(copy, MoreLists.sublistRemoveNFromEnd(secretKey, 1))
+          .forEach(parentOfSecretNode -> {
+            // of course arrays are different.
+            if (MoreLists.last(secretKey).equals("[]")) {
+              final int numberOfItemsInArray = parentOfSecretNode.size();
+              ((ArrayNode) parentOfSecretNode).removeAll();
+              for (int i = 0; i < numberOfItemsInArray; i++) {
+                ((ArrayNode) parentOfSecretNode).add(SECRETS_MASK);
+              }
+            }
+            // only mask if it is actually there.
+            if (parentOfSecretNode.has(MoreLists.last(secretKey))) {
+              ((ObjectNode) parentOfSecretNode).put(MoreLists.last(secretKey), SECRETS_MASK);
+            }
+          });
+    }
+    return copy;
+  };
+
+  // list to handle list.
+  static List<JsonNode> traverse(final JsonNode obj, final List<String> remainingPath) {
+    if (obj == null) {
+      return Collections.emptyList();
+    }
+
+    if (remainingPath.isEmpty()) {
+      return List.of(obj);
+    }
+
+    final String nextKey = remainingPath.get(0);
+    final List<String> nextPath = MoreLists.sublistToEnd(remainingPath, 1);
+
+    if (nextKey.equals("[]")) {
+      final List<JsonNode> collector = new ArrayList<>();
+      for (final JsonNode listItem : obj) {
+        collector.addAll(traverse(listItem, nextPath));
+      }
+      return collector;
+    } else if (obj.has(nextKey)) {
+      return traverse(obj.get(nextKey), nextPath);
+    } else {
+      return Collections.emptyList();
+    }
+  }
+
   @Value
   private class SecretKeys {
 
@@ -98,7 +161,24 @@ public class JsonSecretsProcessor {
 
   }
 
-  private SecretKeys getAllSecretKeys(final JsonNode schema) {
+  Set<List<String>> getAllSecretKeys2(final JsonNode schema) {
+    final Set<List<String>> secretKeys = new HashSet<>();
+
+    JsonSchemas.traverseJsonSchema(schema, (node, path) -> {
+      // definition of a value node in jsonschema is an object node.
+      final Iterator<Entry<String, JsonNode>> fields = node.fields();
+      for (final Iterator<Entry<String, JsonNode>> it = node.fields(); it.hasNext();) {
+        final Entry<String, JsonNode> field = it.next();
+        if (field.getKey().equals("airbyte_secret")) {
+          secretKeys.add(path);
+        }
+      }
+    });
+    return secretKeys;
+  }
+
+  @VisibleForTesting
+  SecretKeys getAllSecretKeys(final JsonNode schema) {
     final Set<String> fieldSecretKeys = new HashSet<>();
     final Set<String> arraySecretKeys = new HashSet<>();
 
