@@ -34,6 +34,8 @@ export DOCKER_BUILD_PLATFORM=linux/arm64
 export DOCKER_BUILD_ARCH=arm64
 export ALPINE_IMAGE=arm64v8/alpine:3.14
 export POSTGRES_IMAGE=arm64v8/postgres:13-alpine
+export NGINX_IMAGE=arm64v8/nginx:1.19-alpine
+export JDK_IMAGE_REPOSITORY=arm64v8/openjdk
 export JDK_VERSION=17
 ```
 
