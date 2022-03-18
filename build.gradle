@@ -135,6 +135,8 @@ def Task getDockerBuildTask(String artifactName, String projectDir) {
         def buildPlatform = System.getenv('DOCKER_BUILD_PLATFORM') ?: 'linux/amd64'
         def alpineImage = System.getenv('ALPINE_IMAGE') ?: 'alpine:3.4'
         def postgresImage = System.getenv('POSTGRES_IMAGE') ?: 'postgres:13-alpine'
+        def nginxImage = System.getenv('NGINX_IMAGE') ?: 'nginx:1.19-alpine'
+        def openJDKImageRepo = System.getenv('JDK_IMAGE_REPOSITORY') ?: 'openjdk'
         def jdkVersion = System.getenv('JDK_VERSION') ?: '17.0.1'
         def buildArch = System.getenv('DOCKER_BUILD_ARCH') ?: 'amd64'
 
@@ -145,6 +147,8 @@ def Task getDockerBuildTask(String artifactName, String projectDir) {
         buildArgs.put('DOCKER_BUILD_ARCH', buildArch)
         buildArgs.put('ALPINE_IMAGE', alpineImage)
         buildArgs.put('POSTGRES_IMAGE', postgresImage)
+        buildArgs.put('NGINX_IMAGE', nginxImage)
+        buildArgs.put('JDK_IMAGE_REPOSITORY', openJDKImageRepo)
     })
 }
 
