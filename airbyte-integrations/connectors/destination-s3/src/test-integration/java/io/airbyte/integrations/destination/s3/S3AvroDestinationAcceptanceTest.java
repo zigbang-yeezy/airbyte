@@ -142,4 +142,5 @@ public class S3AvroDestinationAcceptanceTest extends S3DestinationAcceptanceTest
       }
     }
   }
+
 }
